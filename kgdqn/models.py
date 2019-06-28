@@ -90,7 +90,7 @@ class KGDQN(nn.Module):
                 drqa_input = torch.LongTensor(state.drqa_input).unsqueeze_(0).cuda()
 
                 s_t = self.state_gat(graph_state_rep).unsqueeze_(0).repeat(len(feasible_actions_rep), 1).cuda()
-    
+
                 encoded_doc = self.action_drqa(drqa_input, state)[1]
                 a_t = torch.LongTensor(feasible_actions_rep).cuda()#unsqueeze_(0).cuda()
 

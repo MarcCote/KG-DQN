@@ -20,7 +20,7 @@ def call_stanford_openie(sentence):
 
 
 class StateNAction(object):
-    
+
     def __init__(self):
         self.graph_state = nx.DiGraph()
 
@@ -85,6 +85,7 @@ class StateNAction(object):
         return
 
     def update_state(self, visible_state, prev_action=None):
+        # visible_state : look + observation
         remove = []
         prev_remove = []
         link = []
@@ -95,7 +96,7 @@ class StateNAction(object):
 
         self.visible_state = str(visible_state)
         rules = []
-        
+
         sents = call_stanford_openie(self.visible_state)['sentences']
 
         for ov in sents:
@@ -169,10 +170,10 @@ class StateNAction(object):
             r = self.graph_state[edge[0]][edge[1]]['rel']
             if r in prev_remove:
                 self.graph_state.remove_edge(*edge)
-                
+
         if prev_you_subgraph is not None:
             self.graph_state.remove_edges_from(prev_you_subgraph.edges)
-        
+
         for rule in add_rules:
             u = '_'.join(str(rule[0]).split())
             v = '_'.join(str(rule[2]).split())
@@ -184,8 +185,8 @@ class StateNAction(object):
             self.graph_state.add_edges_from(prev_room_subgraph.edges)
         print(self.graph_state.edges)
 
-        return
-    
+        return add_rules
+
     def get_state_rep_kge(self):
         ret = []
         self.adj_matrix = np.zeros((len(self.vocab_kge['entity']), len(self.vocab_kge['entity'])))
@@ -295,7 +296,7 @@ class StateNAction(object):
         #ret = " ".join([self.rev_vocab_drqa[i] for i in action_ids if i != 0])
         ret = ret.strip()
         return ret
-    
+
     def step_pruned(self, visible_state, prev_action=None):
         self.update_state(visible_state, prev_action)
 

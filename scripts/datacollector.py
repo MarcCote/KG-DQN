@@ -6,6 +6,8 @@ import glob
 import requests
 import json
 
+from tqdm import tqdm
+
 
 class NaiveAgent(textworld.Agent):
     def __init__(self, seed=1234):
@@ -70,7 +72,9 @@ class WalkthroughAgent(textworld.Agent):
             raise NameError(msg)
 
         # Load command from the generated game.
-        self._commands = iter(env.game.quests[0].commands)
+        self._commands = iter(env.game.metadata.get("walkthrough", []))
+        if env.game.main_quest:
+            self._commands = iter(env.game.main_quest.commands)
 
     def act(self, game_state, reward, done):
         try:
@@ -138,74 +142,75 @@ def call_stanford_openie(sentence):
 
 
 def generate_data(games, type):
-        if type == 'collect':
-            out = open("./random.txt", 'w')
-            acts = set()
-            for g in games:
-                acts.update(test_agent(WalkthroughAgent(), game=g, out=out))
-                acts.update(test_agent(RandomAgent(), game=g, out=out))
-            out.close()
+    if type == 'collect':
+        out = open("./random.txt", 'w')
+        acts = set()
+        for g in tqdm(games):
+            acts.update(test_agent(WalkthroughAgent(), game=g, out=out))
+            acts.update(test_agent(RandomAgent(), game=g, out=out))
+        out.close()
 
-            out = open('./cleaned_random.txt', 'w')
-            with open('./random.txt', 'r') as f:
-                cur = []
-                for line in f:
-                    # print(line)
-                    if line != '---------' and "Admissible actions:" not in str(line) and "Taken action:" not in str(
-                            line):
-                        cur.append(line)
-                    else:
-                        cur = [a.strip() for a in cur]
-                        cur = ' '.join(cur).strip().replace('\n', '').replace('---------', '')
-                        cur = re.sub("(?<=-\=).*?(?=\=-)", '', cur)
-                        cur = cur.replace("-==-", '').strip()
-                        cur = '. '.join([a.strip() for a in cur.split('.')])
-                        out.write(cur + '\n')
-                        cur = []
-            out.close()
+        out = open('./cleaned_random.txt', 'w')
+        with open('./random.txt', 'r') as f:
+            cur = []
+            for line in f:
+                # print(line)
+                if line != '---------' and "Admissible actions:" not in str(line) and "Taken action:" not in str(
+                        line):
+                    cur.append(line)
+                else:
+                    cur = [a.strip() for a in cur]
+                    cur = ' '.join(cur).strip().replace('\n', '').replace('---------', '')
+                    cur = re.sub("(?<=-\=).*?(?=\=-)", '', cur)
+                    cur = cur.replace("-==-", '').strip()
+                    cur = '. '.join([a.strip() for a in cur.split('.')])
+                    out.write(cur + '\n')
+                    cur = []
+        out.close()
 
-            input_file = open("./cleaned_random.txt", 'r')
+        input_file = open("./cleaned_random.txt", 'r')
 
-            entities = set()
-            relations = set()
+        entities = set()
+        relations = set()
 
-            sents = input_file.read()
+        sents = input_file.read()
 
-            try:
-                # triple = callStanfordReq(sent)['sentences'][0]['openie']
-                for ov in call_stanford_openie(sents)['sentences']:
-                    triple = ov['openie']
-                    # print(triple)
-                    # print(sent,)
-                    for tr in triple:
-                        h, r, t = tr['subject'], tr['relation'], tr['object']
-                        entities.add(h)
-                        entities.add(t)
-                        relations.add(r)
-                        # print(' | ' + h + ', ' + r + ', ' + t,)
-            except:
-                print("OpenIE error")
+        try:
+            # triple = callStanfordReq(sent)['sentences'][0]['openie']
+            for ov in call_stanford_openie(sents)['sentences']:
+                triple = ov['openie']
+                # print(triple)
+                # print(sent,)
+                for tr in triple:
+                    h, r, t = tr['subject'], tr['relation'], tr['object']
+                    entities.add(h)
+                    entities.add(t)
+                    relations.add(r)
+                    # print(' | ' + h + ', ' + r + ', ' + t,)
+        except:
+            print("OpenIE error")
 
-            act_out = open('./act2id.txt', 'w')
-            act_out.write(str({k: i for i, k in enumerate(acts)}))
-            act_out.close()
+        act_out = open('./act2id.txt', 'w')
+        act_out.write(str({k: i for i, k in enumerate(acts)}))
+        act_out.close()
 
-            ent_out = open('./entity2id.tsv', 'w')
-            rel_out = open('./relation2id.tsv', 'w')
+        ent_out = open('./entity2id.tsv', 'w')
+        rel_out = open('./relation2id.tsv', 'w')
 
-            for i, e in enumerate(entities):
-                ent_out.write('_'.join(e.split()) + '\t' + str(i) + '\n')
+        for i, e in enumerate(entities):
+            ent_out.write('_'.join(e.split()) + '\t' + str(i) + '\n')
 
-            ent_out.close()
-            for i, r in enumerate(relations):
-                rel_out.write('_'.join(r.split()) + '\t' + str(i) + '\n')
-            rel_out.close()
+        ent_out.close()
+        for i, r in enumerate(relations):
+            rel_out.write('_'.join(r.split()) + '\t' + str(i) + '\n')
+        rel_out.close()
 
-        elif type == 'oracle':
-            out = open("./oracle.txt", 'w')
-            for g in games:
-                test_agent(WalkthroughAgent(), game=g, out=out)
-            out.close()
+    elif type == 'oracle':
+        out = open("./oracle.txt", 'w')
+        for g in tqdm(games):
+            test_agent(WalkthroughAgent(), game=g, out=out)
+
+        out.close()
 
 
 if __name__ == "__main__":
@@ -213,6 +218,6 @@ if __name__ == "__main__":
         print("Please supply directory with games and type.")
         exit()
 
-    games = glob.glob(sys.argv[1] + '*.ulx')[:2]
-    print(games)
+    games = glob.glob(sys.argv[1] + '*.ulx')
+    print("{} game(s) found.".format(len(games)))
     generate_data(games, sys.argv[2])
