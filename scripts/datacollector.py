@@ -1,6 +1,7 @@
 import numpy as np
 import textworld
 import re
+import io
 import sys
 import glob
 import requests
@@ -128,7 +129,7 @@ def test_agent(agent, game, out, max_step=1000, nb_episodes=5):
     # print("  \tavg. steps: {:5.1f}; avg. score: {:4.1f} / 1.".format(np.mean(avg_moves), np.mean(avg_scores)))
     # print(avg_moves)
     # exit()
-    return acts
+    return acts, out
 
 
 def call_stanford_openie(sentence):
@@ -141,31 +142,88 @@ def call_stanford_openie(sentence):
     return response
 
 
+def pmap(fct, data, merge: lambda e: e, init=lambda e: tuple(), nb_processes=None):
+    import multiprocessing, tqdm
+    nb_processes = nb_processes or multiprocessing.cpu_count()
+    print("Using {} processes.".format(nb_processes))
+    desc = "Processing {} elements".format(len(data))
+    pbar = tqdm.tqdm(total=len(data), desc=desc)
+
+    rvalues = []
+    def _callback(rvalue):
+        merge(rvalue)
+        rvalues.append(rvalue)
+        pbar.update()
+
+    if nb_processes > 1:
+        pool = multiprocessing.Pool(nb_processes)
+        results = []
+        for i, element in enumerate(data):
+            args = init(i)
+            result = pool.apply_async(fct, (element,) + args, callback=_callback)
+            results.append(result)
+
+        for result in results:
+            result.get()
+
+        pool.close()
+        pool.join()
+
+    else:
+        for i, element in enumerate(data):
+            args = init(i)
+            rvalue = fct(element, *args)
+            _callback(rvalue)
+
+    return rvalues
+
+
 def generate_data(games, type):
     if type == 'collect':
-        out = open("./random.txt", 'w')
         acts = set()
-        for g in tqdm(games):
-            acts.update(test_agent(WalkthroughAgent(), game=g, out=out))
-            acts.update(test_agent(RandomAgent(), game=g, out=out))
+
+        dataset = []
+        def _merge(data):
+            _, out = data
+            dataset.append(out.getvalue())
+
+        def _init(i):
+            return (io.StringIO(),)
+
+        from functools import partial
+        _fct = partial(test_agent, RandomAgent())
+
+        pmap(_fct, data=games, merge=_merge, init=_init, nb_processes=None)
+
+        # for g in tqdm(games):
+        #     # acts.update(test_agent(WalkthroughAgent(), game=g, out=out))
+        #     acts.update(test_agent(RandomAgent(), game=g, out=out))
+
+        out = open("./random.txt", 'w')
+        out.write("".join(dataset))
         out.close()
 
-        out = open('./cleaned_random.txt', 'w')
+        with open('./data/oracle.txt', 'r') as f:
+            lines = list(f)
+
         with open('./random.txt', 'r') as f:
-            cur = []
-            for line in f:
-                # print(line)
-                if line != '---------' and "Admissible actions:" not in str(line) and "Taken action:" not in str(
-                        line):
-                    cur.append(line)
-                else:
-                    cur = [a.strip() for a in cur]
-                    cur = ' '.join(cur).strip().replace('\n', '').replace('---------', '')
-                    cur = re.sub("(?<=-\=).*?(?=\=-)", '', cur)
-                    cur = cur.replace("-==-", '').strip()
-                    cur = '. '.join([a.strip() for a in cur.split('.')])
-                    out.write(cur + '\n')
-                    cur = []
+            lines += list(f)
+
+        out = open('./cleaned_random.txt', 'w')
+        cur = []
+        for line in lines:
+            # print(line)
+            if line != '---------' and "Admissible actions:" not in str(line) and "Taken action:" not in str(
+                    line):
+                cur.append(line)
+            else:
+                cur = [a.strip() for a in cur]
+                cur = ' '.join(cur).strip().replace('\n', '').replace('---------', '')
+                cur = re.sub("(?<=-\=).*?(?=\=-)", '', cur)
+                cur = cur.replace("-==-", '').strip()
+                cur = '. '.join([a.strip() for a in cur.split('.')])
+                out.write(cur + '\n')
+                cur = []
         out.close()
 
         input_file = open("./cleaned_random.txt", 'r')
